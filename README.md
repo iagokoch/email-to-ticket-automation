@@ -158,3 +158,14 @@ atrasar.
 - Se a automação ficar mais de `LOOKBACK_HOURS` (padrão 48h) sem
   rodar com sucesso, um e-mail poderia ser perdido — mitigado pelo
   agendamento 2x/dia, mas é uma janela finita.
+
+## Contribuindo
+
+Pull requests para a `main` precisam passar nos checks de CI (`pytest`
+e `ruff`, ver `workflows/ci.yml`) e no CodeQL (`workflows/codeql.yml`)
+antes de poder ser mergeados — a branch `main` tem proteção
+configurada exigindo esses status checks.
+
+## Licença
+
+Este projeto está sob a licença MIT — ver [LICENSE](LICENSE).
