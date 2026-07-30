@@ -7,7 +7,7 @@ não deveria precisar mudar.
 import msal
 import requests
 
-from config import GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, MAILBOX_USER
+from config import GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_TENANT_ID, MAILBOX_USER
 
 GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 

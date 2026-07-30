@@ -20,7 +20,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from config import STATE_FILE_PATH, LOOKBACK_HOURS
+from config import LOOKBACK_HOURS, STATE_FILE_PATH
 
 
 def _load_raw() -> dict:

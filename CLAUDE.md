@@ -8,7 +8,12 @@ chamado no Tiflux.
 
 - Rodar: `python main.py`
 - Testes: `pytest` (cobre principalmente `email_parser.py`, o ponto
-  mais frágil do sistema). Ainda não há lint configurado.
+  mais frágil do sistema).
+- Lint: `ruff check .`
+- CI (GitHub Actions, `.github/workflows/`): roda pytest + ruff em
+  push/PR na main (`ci.yml`) e CodeQL para Python (`codeql.yml`).
+  Dependabot (`.github/dependabot.yml`) monitora `pip` e
+  `github-actions` semanalmente.
 
 # Arquitetura
 

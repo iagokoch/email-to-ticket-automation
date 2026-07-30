@@ -10,15 +10,15 @@ em Tiflux > Configurações > Integrações > Dados), não Bearer.
 import requests
 
 from config import (
-    TIFLUX_TOKEN,
     TIFLUX_API_EMAIL,
     TIFLUX_BASE_URL,
-    TIFLUX_DESK_ID,
     TIFLUX_CLIENT_ID,
+    TIFLUX_DESK_ID,
     TIFLUX_PRIORITY_ID,
-    TIFLUX_REQUESTOR_NAME,
     TIFLUX_REQUESTOR_EMAIL,
+    TIFLUX_REQUESTOR_NAME,
     TIFLUX_REQUESTOR_PHONE_RAW,
+    TIFLUX_TOKEN,
 )
 
 

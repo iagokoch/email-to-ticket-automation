@@ -62,6 +62,54 @@ ponto mais frágil do sistema):
 pytest
 ```
 
+Rodar o lint:
+
+```bash
+ruff check .
+```
+
+## Dependências e segurança
+
+As versões mínimas em `requirements.txt` (`requests>=2.33.0`,
+`idna>=3.15`, `urllib3>=2.7.0`) não são arbitrárias — foram fixadas
+para corrigir CVEs conhecidas, identificadas rodando o Snyk.
+
+Checar vulnerabilidades nas dependências instaladas:
+
+```bash
+snyk test
+```
+
+Também foi rodado `snyk monitor`, que manda um snapshot do projeto
+pro dashboard do Snyk (snyk.io) e avisa por e-mail se uma CVE nova for
+descoberta pra alguma dependência já usada aqui — mesmo sem rodar
+`snyk test` de novo:
+
+```bash
+snyk monitor
+```
+
+Nenhum dos dois roda sozinho no CI (ver seção "CI/CD" abaixo, que usa
+só recursos nativos do GitHub, sem Snyk): `snyk test` precisa ser
+rodado manualmente antes de atualizar `requirements.txt`, e `snyk
+monitor` precisa ser re-rodado sempre que `requirements.txt` mudar,
+senão o snapshot monitorado no dashboard fica desatualizado.
+
+## CI/CD (GitHub Actions)
+
+Tudo em `.github/`, usando só recursos nativos do GitHub (sem serviço
+externo, sem secret novo):
+
+- `workflows/ci.yml`: a cada push e pull request na `main`, roda
+  `ruff check .` e `pytest` em `ubuntu-latest` com Python 3.14 (CI não
+  precisa espelhar o Windows de produção — só valida que o código
+  funciona).
+- `workflows/codeql.yml`: CodeQL (code scanning) para Python, a cada
+  push e pull request na `main`.
+- `dependabot.yml`: monitora dependências `pip` (`requirements.txt`) e
+  GitHub Actions, checando semanalmente e abrindo PR automático quando
+  há nova versão ou CVE conhecida.
+
 ## Log e alertas
 
 Toda execução loga em `LOG_FILE_PATH` (por padrão, `automacao.log`
