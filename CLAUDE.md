@@ -7,20 +7,25 @@ chamado no Tiflux.
 # Comandos
 
 - Rodar: `python main.py`
-- TODO: ainda não há lint nem testes configurados neste projeto —
-  definir isso antes de crescer o código (ex.: ruff pra lint, pytest
-  pros testes do email_parser).
+- Testes: `pytest` (cobre principalmente `email_parser.py`, o ponto
+  mais frágil do sistema). Ainda não há lint configurado.
 
 # Arquitetura
 
-- `graph_client.py`: só busca e-mail via Microsoft Graph (client
-  credentials). Não conhece Tiflux.
+- `graph_client.py`: busca e-mail e envia e-mail (alerta) via
+  Microsoft Graph (client credentials). Não conhece Tiflux.
 - `email_parser.py`: só transforma o corpo do e-mail em dados
   estruturados (`VagaFechada`). Não conhece Graph nem Tiflux.
-- `tiflux_client.py`: só cria chamado no Tiflux a partir de um payload
-  pronto. Não conhece e-mail.
-- `state_store.py`: controla dedupe (ids já processados) e o último
-  timestamp processado, em `state.json` local.
+- `ticket_builder.py`: só transforma um `VagaFechada` em título/
+  descrição de texto. Não faz HTTP, não conhece Graph nem Tiflux.
+- `tiflux_client.py`: só cria chamado no Tiflux (API v1, Basic Auth) a
+  partir de um payload pronto. Não conhece e-mail.
+- `state_store.py`: controla dedupe (ids já processados). Não existe
+  cursor de "última execução" persistido — `load_last_run_iso()`
+  sempre devolve `agora - LOOKBACK_HOURS`; dedupe real é via
+  `processed_ids` em `state.json` local.
+- `alerting.py`: configura logging e decide como alertar uma falha
+  (log + e-mail via `graph_client.send_mail`).
 - `main.py`: só orquestra a ordem das chamadas — não deve conter
   lógica de negócio própria.
 - Regra geral: mudar um desses módulos não deveria exigir mudar os

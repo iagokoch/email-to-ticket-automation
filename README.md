@@ -7,11 +7,15 @@ monitorada, abre um chamado no Tiflux com os dados do e-mail.
 
 Cada módulo tem uma responsabilidade e não conhece os outros:
 
-- `graph_client.py` só sabe buscar e-mail. Não sabe o que é Tiflux.
+- `graph_client.py` só sabe buscar e-mail e enviar e-mail. Não sabe o que é Tiflux.
 - `email_parser.py` só sabe transformar texto em dados estruturados.
   Não sabe de onde o texto veio nem para onde os dados vão.
+- `ticket_builder.py` só sabe transformar dados estruturados em texto
+  de título/descrição. Não faz HTTP, não conhece Graph nem Tiflux.
 - `tiflux_client.py` só sabe criar chamado a partir de um payload pronto.
 - `state_store.py` só sabe o que já foi processado.
+- `alerting.py` só sabe configurar logging e decidir como alertar uma
+  falha (hoje só log em arquivo — ver seção "Log e alertas" abaixo).
 - `main.py` só orquestra a ordem — sem lógica de negócio própria.
 
 Isso significa que se o template do e-mail mudar, você mexe só em
@@ -23,34 +27,86 @@ o resto.
 
 1. App Registration no Azure AD com permissão de **aplicação**
    `Mail.Read` (não delegada — client credentials flow, sem usuário
-   logado).
+   logado). `Mail.Send` não é necessária hoje (alerta de falha é só
+   log em arquivo, ver "Log e alertas" abaixo) — só seria preciso se
+   um dia reativarmos o alerta por e-mail.
 2. Recomendado: uma **Application Access Policy** no Exchange Online
    restringindo esse app a enxergar só a caixa monitorada, não o
    tenant inteiro (princípio do menor privilégio).
-3. Client ID, client secret e tenant ID desse app registration vão no
-   `.env` (a partir do `.env.example`).
+3. Client ID, client secret e tenant ID desse app registration, mais
+   as credenciais do "Usuário API" do Tiflux (Configurações >
+   Integrações > Dados), vão no `.env` (a partir do `.env.example`).
 
-## O que ainda está em TODO e por quê
+## Tiflux: API v1
 
-- **`email_parser.py`**: preciso de um exemplo real (pode anonimizar)
-  do e-mail de Fechamento de Vaga para desenhar a extração certa.
-- **`tiflux_client.py`**: preciso saber os campos obrigatórios reais do
-  endpoint de criação de chamado (categoria? prioridade? cliente?).
-- **`state_store.py`**: a lógica de dedupe é simples de propósito
-  (arquivo JSON local) — só evolua pra algo mais robusto se isso um
-  dia rodar em mais de uma máquina.
-- **Alertas de falha** em `main.py`: hoje só imprime no console. Como
-  isso vai rodar sem ninguém olhando, decida como quer ser avisado
-  quando falhar (e-mail, Slack, log monitorado?).
+A automação usa a **API v1** do Tiflux (a v2 não está disponível para
+esta conta). Diferenças importantes em relação à v2:
+- Autenticação é **Basic Auth** (e-mail + senha do "Usuário API"), não
+  Bearer token.
+- O corpo da requisição de criação de ticket é `application/json`.
+- `client_id`, `desk_id` e `priority_id` são fixos por configuração
+  (`.env`) — não vêm do e-mail.
 
 ## Como rodar
 
 ```bash
 pip install -r requirements.txt
-# configurar .env com os valores reais (não commitar)
+# configurar .env com os valores reais (não commitar), a partir do .env.example
 python main.py
 ```
 
-Ainda falta decidir como isso vai ser agendado (Task Scheduler do
-Windows rodando a cada N minutos é o caminho mais simples, dado que
-vocês já usam ambiente Windows/M365).
+Rodar os testes (cobre principalmente `email_parser.py`, que é o
+ponto mais frágil do sistema):
+
+```bash
+pytest
+```
+
+## Log e alertas
+
+Toda execução loga em `LOG_FILE_PATH` (por padrão, `automacao.log`
+dentro da própria pasta do projeto — caminho absoluto, não depende de
+onde o processo foi iniciado). É o primeiro lugar a olhar se um
+chamado não abriu: linhas de erro trazem o id do e-mail e a exceção
+(nunca o corpo do e-mail nem dado de candidato).
+
+O alerta por e-mail em caso de falha está desativado por enquanto —
+`Mail.Send` no Azure AD ainda não tomou efeito (permissão concedida,
+mas `sendMail` retornou 403; provavelmente falta consentimento de
+admin realmente aplicado, ou é permissão do tipo errado). Enquanto
+isso não for resolvido, `notify_failure()` em `alerting.py` só loga
+localmente. Pra reativar o e-mail: confirmar `Mail.Send` como
+"Application" com "Granted for [tenant]" nas API permissions do App
+Registration, e então voltar a chamar `graph_client.send_mail()`
+dentro de `notify_failure()`.
+
+## Agendamento
+
+Já configurado nesta máquina via Task Scheduler do Windows, rodando
+`python main.py` 2x ao dia (10:00 e 17:00), com "Não iniciar uma nova
+instância" (evita sobreposição se uma execução atrasar):
+
+```
+FechamentoVaga_Tiflux_10h  -> 10:00 diário
+FechamentoVaga_Tiflux_17h  -> 17:00 diário
+```
+
+Pra recriar em outra máquina:
+
+```bash
+schtasks /create /tn "FechamentoVaga_Tiflux_10h" /tr "\"<caminho_do_python>\" \"<caminho_do_main.py>\"" /sc DAILY /st 10:00 /rl LIMITED
+schtasks /create /tn "FechamentoVaga_Tiflux_17h" /tr "\"<caminho_do_python>\" \"<caminho_do_main.py>\"" /sc DAILY /st 17:00 /rl LIMITED
+```
+
+Depois de criadas, nas Propriedades de cada tarefa, marcar "Não
+iniciar uma nova instância" para evitar sobreposição se uma execução
+atrasar.
+
+## Riscos aceitos (conhecidos, não resolvidos)
+
+- Se o POST ao Tiflux for aceito mas a resposta não chegar (timeout),
+  o e-mail não é marcado como processado e pode gerar chamado
+  duplicado na próxima execução — a API v1 não expõe idempotency key.
+- Se a automação ficar mais de `LOOKBACK_HOURS` (padrão 48h) sem
+  rodar com sucesso, um e-mail poderia ser perdido — mitigado pelo
+  agendamento 2x/dia, mas é uma janela finita.

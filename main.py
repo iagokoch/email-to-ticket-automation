@@ -4,19 +4,30 @@ só decide a ordem das chamadas e trata erro de alto nível. Se você
 sentir vontade de colocar parsing ou regra do Tiflux aqui, é sinal de
 que esse código deveria estar em email_parser.py ou tiflux_client.py.
 """
-from graph_client import fetch_new_emails
+import logging
+
+from alerting import notify_failure, setup_logging
 from email_parser import parse_vaga_email
+from graph_client import fetch_new_emails
+from state_store import load_last_run_iso, load_processed_ids, mark_processed
+from ticket_builder import build_ticket_description, build_ticket_title
 from tiflux_client import create_ticket
-from state_store import load_processed_ids, load_last_run_iso, mark_processed
 
 SUBJECT_FILTER = "Fechamento Vaga"
+logger = logging.getLogger(__name__)
 
 
 def run() -> None:
+    setup_logging()
     processed = load_processed_ids()
     since_iso = load_last_run_iso()
 
-    emails = fetch_new_emails(SUBJECT_FILTER, since_iso)
+    try:
+        emails = fetch_new_emails(SUBJECT_FILTER, since_iso)
+    except Exception as exc:
+        logger.exception("Falha ao buscar e-mails no Graph")
+        notify_failure("busca de e-mails no Graph", exc)
+        return
 
     for email in emails:
         if email["id"] in processed:
@@ -24,18 +35,15 @@ def run() -> None:
 
         try:
             dados = parse_vaga_email(email["body"]["content"])
-            create_ticket(
-                titulo=f"Fechamento de vaga: {dados.cargo}",
-                descricao="...",  # TODO: montar descrição a partir de `dados`
+            ticket = create_ticket(
+                titulo=build_ticket_title(dados),
+                descricao=build_ticket_description(dados),
             )
-            mark_processed(email["id"])
+            logger.info("Chamado %s criado para e-mail %s", ticket.get("ticket_number"), email["id"])
+            mark_processed(email["id"], email["receivedDateTime"])
         except Exception as exc:
-            # TODO: decidir o que fazer aqui. Isso é uma automação sem
-            # ninguém olhando — não deixe uma falha morrer em silêncio.
-            # Sugestão: logar em arquivo e, se possível, mandar um
-            # alerta (e-mail ou mensagem) quando falhar, pra você saber
-            # que precisa abrir o chamado manualmente dessa vez.
-            print(f"Falha ao processar e-mail {email['id']}: {exc}")
+            logger.exception("Falha ao processar e-mail %s", email["id"])
+            notify_failure(f"processamento do e-mail {email['id']}", exc)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 .env
 state.json
+automacao.log*
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/

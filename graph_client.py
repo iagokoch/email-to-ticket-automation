@@ -28,29 +28,58 @@ def get_access_token() -> str:
 
 def fetch_new_emails(subject_filter: str, since_iso: str) -> list[dict]:
     """
-    Busca e-mails na caixa MAILBOX_USER com o assunto contendo `subject_filter`,
-    recebidos após `since_iso` (ISO 8601 UTC, ex.: "2026-07-28T00:00:00Z").
+    Busca e-mails na caixa MAILBOX_USER recebidos após `since_iso`
+    (ISO 8601 UTC, ex.: "2026-07-28T00:00:00Z") cujo assunto contenha
+    `subject_filter`.
 
-    TODO: montar o $filter da Graph API. Começando pelo caminho mais simples:
+    O $filter da Graph API só cobre a data: contains() não tem suporte
+    garantido em $filter sobre subject (só startswith é documentado
+    como confiável), então o filtro por assunto é feito aqui mesmo,
+    em Python, depois de buscar.
 
-        $filter=receivedDateTime gt {since_iso} and contains(subject,'{subject_filter}')
+    Pede o corpo em texto puro (Prefer: outlook.body-content-type=text)
+    para o parsing em email_parser.py não precisar lidar com HTML.
+    """
+    token = get_access_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Prefer": 'outlook.body-content-type="text"',
+    }
+    url = f"https://graph.microsoft.com/v1.0/users/{MAILBOX_USER}/messages"
+    params = {
+        "$filter": f"receivedDateTime ge {since_iso}",
+        "$select": "id,subject,receivedDateTime,body",
+        "$orderby": "receivedDateTime asc",
+        "$top": 50,
+    }
 
-    Isso é suficiente para o volume esperado. Só migre para delta query
-    (/messages/delta com token salvo entre execuções) se perceber e-mail
-    sendo perdido entre execuções — não implemente isso agora, é
-    complexidade que talvez nunca seja necessária.
+    results = []
+    while url:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        results.extend(data.get("value", []))
+        url = data.get("@odata.nextLink")
+        params = None  # @odata.nextLink já vem com todos os query params embutidos
 
-    Atenção: se o volume por execução puder passar de ~10 e-mails,
-    trate paginação (campo "@odata.nextLink" na resposta).
+    return [msg for msg in results if subject_filter.lower() in msg.get("subject", "").lower()]
+
+
+def send_mail(to_address: str, subject: str, body_text: str) -> None:
+    """
+    Envia um e-mail a partir da caixa MAILBOX_USER. Usado só para o
+    alerta de falha (ver alerting.py) — precisa da permissão de
+    aplicação Mail.Send no App Registration (além de Mail.Read).
     """
     token = get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://graph.microsoft.com/v1.0/users/{MAILBOX_USER}/messages"
-    params = {
-        "$filter": "...",  # TODO
-        "$select": "id,subject,receivedDateTime,body",
-        "$orderby": "receivedDateTime asc",
+    url = f"https://graph.microsoft.com/v1.0/users/{MAILBOX_USER}/sendMail"
+    payload = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "Text", "content": body_text},
+            "toRecipients": [{"emailAddress": {"address": to_address}}],
+        }
     }
-    response = requests.get(url, headers=headers, params=params, timeout=30)
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
     response.raise_for_status()
-    return response.json().get("value", [])
