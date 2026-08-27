@@ -3,5 +3,5 @@ requests>=2.34.2
 python-dotenv
 pytest
 ruff
-idna>=3.18
+idna>=3.19
 urllib3>=2.7.0
